@@ -31,23 +31,31 @@ async def play(interaction: discord.Interaction, query: str):
     vc = await voice_channel.connect()
     # Defer the response to allow time for processing
     await interaction.response.defer(thinking=True)
+    while True:
+        # Call the generate function (slow part)
+        # Run the blocking generation in a thread
+        status, url, content = await asyncio.to_thread(
+            generate.generate,
+            query,
+            bearer_token=os.getenv("RIFFUSION_TOKEN")
+        )
+        # Wait for the audio to finish playing
+        while vc.is_playing():
+            await asyncio.sleep(1)
+        # Play the audio and disconnect after it's done
+        vc.play(discord.FFmpegPCMAudio(url, executable="ffmpeg"), after=lambda e: print(f"Finished playing: {e}"))
 
-    # Call the generate function (slow part)
-    # Run the blocking generation in a thread
-    status, url, content = await asyncio.to_thread(
-        generate.generate,
-        query,
-        bearer_token=os.getenv("RIFFUSION_TOKEN")
-    )
-    # Play the audio and disconnect after it's done
-    vc.play(discord.FFmpegPCMAudio(url, executable="ffmpeg"), after=lambda e: print(f"Finished playing: {e}"))
+        # Send the follow-up message once generation is done
+        await interaction.followup.send(f"Now playing: https://www.riffusion.com/song/{status['id']}")
+        # send content as txt file
+        try:
+            with open("llm-pass.txt", "w", encoding="utf-8") as f:
+                f.write(content)
+            await interaction.followup.send(file=discord.File("llm-pass.txt"))
+        except:
+            await interaction.followup.send("Failed to save the content as a file.")
 
-    # Send the follow-up message once generation is done
-    await interaction.followup.send(f"Now playing: https://www.riffusion.com/song/{status['id']}")
-    # send content as txt file
-    with open("llm-pass.txt", "w") as f:
-        f.write(content)
-    await interaction.followup.send(file=discord.File("llm-pass.txt"))
+
 
 
 @bot.tree.command(name="stop", description="Stop the music")
